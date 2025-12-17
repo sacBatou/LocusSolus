@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Time Magic</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none; /* 禁止用户选中文字 */
+            -webkit-user-select: none;
+            touch-action: manipulation;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #000;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        /* 左上角时间显示 */
+        #clock {
+            position: absolute;
+            top: 10px;
+            left: 15px;
+            color: #888; /* 稍微暗一点的白色，显得更真实且不刺眼 */
+            font-size: 14px;
+            z-index: 10;
+            pointer-events: none; /* 点击穿透，不影响下方区域点击 */
+        }
+
+        /* 隐形点击区域容器 */
+        #touch-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 5;
+            display: flex;
+            flex-wrap: wrap;
+        }
+
+        /* 四个象限 */
+        .quadrant {
+            width: 50%;
+            height: 50%;
+            /* border: 1px solid #333;  调试时可打开此边框查看区域 */
+        }
+
+        /* 扑克牌展示层 */
+        #card-display {
+            display: none; /* 默认隐藏 */
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: white;
+            z-index: 100;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+        }
+
+        /* 扑克牌内容样式 */
+        .card-content {
+            font-size: 150px;
+            font-weight: bold;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            line-height: 1.2;
+        }
+
+        /* 左上角和右下角的小标 */
+        .corner-mark {
+            position: absolute;
+            font-size: 40px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            line-height: 1;
+        }
+
+        .top-left {
+            top: 20px;
+            left: 20px;
+        }
+
+        .bottom-right {
+            bottom: 20px;
+            right: 20px;
+            transform: rotate(180deg);
+        }
+
+        /* 颜色定义 */
+        .red { color: #d40000; }
+        .black { color: #000000; }
+
+    </style>
+</head>
+<body>
+
+    <div id="clock">00:00:11</div>
+
+    <div id="touch-layer">
+        <div class="quadrant" onclick="showCard('♠', 'black')"></div>
+        <div class="quadrant" onclick="showCard('♥', 'red')"></div>
+        <div class="quadrant" onclick="showCard('♣', 'black')"></div>
+        <div class="quadrant" onclick="showCard('♦', 'red')"></div>
+    </div>
+
+    <div id="card-display" onclick="hideCard()">
+        <div class="corner-mark top-left">
+            <span id="mark-rank-tl">A</span>
+            <span id="mark-suit-tl">♠</span>
+        </div>
+        
+        <div class="card-content">
+            <span id="main-rank">A</span>
+            <span id="main-suit">♠</span>
+        </div>
+
+        <div class="corner-mark bottom-right">
+            <span id="mark-rank-br">A</span>
+            <span id="mark-suit-br">♠</span>
+        </div>
+    </div>
+
+    <script>
+        // ---------------- 配置部分 ----------------
+        // 秒数循环范围
+        const START_SEC = 11;
+        const END_SEC = 23;
+        
+        // 映射关系：数字 -> 扑克点数
+        const rankMap = {
+            11: 'A',
+            12: '2',
+            13: '3',
+            14: '4',
+            15: '5',
+            16: '6',
+            17: '7',
+            18: '8',
+            19: '9',
+            20: '10',
+            21: 'J',
+            22: 'Q',
+            23: 'K'
+        };
+
+        // ---------------- 逻辑部分 ----------------
+        let magicSecond = START_SEC;
+        const clockEl = document.getElementById('clock');
+        const cardDisplay = document.getElementById('card-display');
+        
+        // 1. 时间循环逻辑
+        function updateClock() {
+            const now = new Date();
+            let hours = now.getHours().toString().padStart(2, '0');
+            let minutes = now.getMinutes().toString().padStart(2, '0');
+            
+            // 更新虚拟秒数
+            magicSecond++;
+            if (magicSecond > END_SEC) {
+                magicSecond = START_SEC;
+            }
+
+            // 更新界面显示
+            clockEl.textContent = `${hours}:${minutes}:${magicSecond}`;
+        }
+
+        // 启动定时器，每秒执行一次
+        setInterval(updateClock, 1000);
+
+        // 初始化一次
+        updateClock();
+
+
+        // 2. 显示扑克牌逻辑
+        function showCard(suit, colorClass) {
+            // 获取当前这一秒对应的点数
+            const currentRank = rankMap[magicSecond];
+            
+            if (!currentRank) return; //以此防止意外错误
+
+            // 更新DOM元素
+            const rankEls = ['mark-rank-tl', 'mark-rank-br', 'main-rank'];
+            const suitEls = ['mark-suit-tl', 'mark-suit-br', 'main-suit'];
+
+            // 设置文字内容
+            rankEls.forEach(id => document.getElementById(id).textContent = currentRank);
+            suitEls.forEach(id => document.getElementById(id).textContent = suit);
+
+            // 设置颜色 (移除旧颜色类，添加新颜色类)
+            const contentDivs = document.querySelectorAll('.corner-mark, .card-content');
+            contentDivs.forEach(div => {
+                div.classList.remove('red', 'black');
+                div.classList.add(colorClass);
+            });
+
+            // 显示图层
+            cardDisplay.style.display = 'flex';
+        }
+
+        // 3. 隐藏扑克牌逻辑
+        function hideCard() {
+            cardDisplay.style.display = 'none';
+        }
+
+    </script>
+</body>
+</html>
