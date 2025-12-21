@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>黑八台球 - 进球修复版</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #0e0e0e;
+            color: white;
+            font-family: 'Arial', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            touch-action: none;
+        }
+
+        #ui-layer {
+            width: 100%;
+            max-width: 450px;
+            display: flex;
+            justify-content: space-between;
+            padding: 12px 20px;
+            box-sizing: border-box;
+            background: #1f1f1f;
+            z-index: 10;
+            border-bottom: 2px solid #333;
+        }
+
+        .player-info {
+            text-align: center;
+            padding: 8px 20px;
+            border-radius: 20px;
+            background: rgba(255,255,255,0.08);
+            transition: all 0.3s;
+            min-width: 90px;
+            border: 1px solid transparent;
+        }
+
+        .active-turn {
+            background-color: #d84315;
+            color: #fff;
+            font-weight: bold;
+            border: 1px solid #ffab91;
+            box-shadow: 0 0 15px rgba(216, 67, 21, 0.4);
+            transform: scale(1.05);
+        }
+
+        #game-area {
+            position: relative;
+            flex-grow: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+            background: #121212;
+        }
+
+        canvas {
+            box-shadow: 0 20px 60px rgba(0,0,0,0.9);
+            border-radius: 6px; 
+            cursor: crosshair;
+        }
+
+        #message-modal {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(25, 25, 25, 0.98);
+            padding: 35px 40px;
+            border-radius: 16px;
+            text-align: center;
+            display: none;
+            z-index: 100;
+            border: 2px solid #444;
+            box-shadow: 0 0 50px rgba(0,0,0,0.95);
+            min-width: 280px;
+        }
+
+        .title-win { color: #4caf50; font-size: 28px; margin-bottom: 10px; font-weight: bold; }
+        .title-lose { color: #f44336; font-size: 28px; margin-bottom: 10px; font-weight: bold; }
+        .msg-desc { color: #bbb; font-size: 16px; line-height: 1.5; margin-bottom: 25px; }
+
+        button {
+            padding: 12px 40px;
+            background: #d84315;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-size: 18px;
+            font-weight: bold;
+            border-radius: 30px;
+            transition: background 0.2s;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="ui-layer">
+        <div id="p1-card" class="player-info active-turn">
+            <div>玩家 1</div>
+            <div id="p1-type" style="font-size:12px; opacity:0.7;">(开球)</div>
+        </div>
+        <div id="p2-card" class="player-info">
+            <div>玩家 2</div>
+            <div id="p2-type" style="font-size:12px; opacity:0.7;">(等待)</div>
+        </div>
+    </div>
+
+    <div id="game-area">
+        <canvas id="poolCanvas"></canvas>
+    </div>
+
+    <div id="message-modal">
+        <h2 id="msg-title" class="title-win">游戏结束</h2>
+        <div id="msg-desc" class="msg-desc"></div>
+        <button onclick="resetGame()">重新开始</button>
+    </div>
+
+<script>
+// --- 1. 数学库 ---
+class Vector {
+    constructor(x, y) { this.x = x; this.y = y; }
+    add(v) { return new Vector(this.x + v.x, this.y + v.y); }
+    sub(v) { return new Vector(this.x - v.x, this.y - v.y); }
+    mult(n) { return new Vector(this.x * n, this.y * n); }
+    mag() { return Math.sqrt(this.x * this.x + this.y * this.y); }
+    normalize() { 
+        let m = this.mag(); 
+        return m === 0 ? new Vector(0, 0) : new Vector(this.x / m, this.y / m); 
+    }
+    dot(v) { return this.x * v.x + this.y * v.y; }
+    dist(v) { return Math.sqrt(Math.pow(this.x - v.x, 2) + Math.pow(this.y - v.y, 2)); }
+}
+
+// --- 2. 游戏配置 ---
+const BALL_RADIUS_BASE = 10.5; 
+const RAIL_WIDTH_BASE = 24;    
+const CUSHION_WIDTH_BASE = 12;  
+const FRICTION = 0.986;
+const WALL_BOUNCE = 0.6;       
+const POCKET_RADIUS_MULT = 1.6; // 扩大袋口半径
+const MAX_POWER = 45;
+const MAX_VELOCITY = 28; 
+
+const COLORS = {
+    1: '#E6B800', 2: '#0D47A1', 3: '#D32F2F', 4: '#7B1FA2', 
+    5: '#F57C00', 6: '#388E3C', 7: '#5D4037', 8: '#111111',
+    9: '#E6B800', 10: '#0D47A1', 11: '#D32F2F', 12: '#7B1FA2', 
+    13: '#F57C00', 14: '#388E3C', 15: '#5D4037', 0: '#FFFFFF'
+};
+
+// --- 3. 球体类 ---
+class Ball {
+    constructor(x, y, id) {
+        this.pos = new Vector(x, y);
+        this.vel = new Vector(0, 0);
+        this.id = id;
+        this.active = true;
+    }
+
+    draw(ctx, scale) {
+        if (!this.active) return;
+        let r = BALL_RADIUS_BASE * scale;
+
+        ctx.save();
+        ctx.translate(this.pos.x, this.pos.y);
+
+        // 阴影
+        ctx.beginPath(); ctx.arc(2, 3, r, 0, Math.PI*2);
+        ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fill();
+
+        // 球体
+        ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI*2);
+        if (this.id === 0) {
+            ctx.fillStyle = '#f0f0f0'; ctx.fill();
+            ctx.beginPath(); ctx.arc(r*0.3, -r*0.3, r*0.15, 0, Math.PI*2); ctx.fillStyle = '#c00'; ctx.fill();
+        } else if (this.id === 8) {
+            ctx.fillStyle = '#1a1a1a'; ctx.fill();
+        } else if (this.id <= 7) {
+            ctx.fillStyle = COLORS[this.id]; ctx.fill();
+        } else {
+            ctx.fillStyle = '#eee'; ctx.fill();
+            ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI*2); ctx.clip();
+            ctx.beginPath(); ctx.rect(-r, -r*0.6, r*2, r*1.2);
+            ctx.fillStyle = COLORS[this.id]; ctx.fill();
+        }
+
+        ctx.restore(); 
+        ctx.save(); 
+        ctx.translate(this.pos.x, this.pos.y);
+
+        // 号码 (大字体)
+        if (this.id !== 0) {
+            ctx.beginPath(); ctx.arc(0, 0, r*0.55, 0, Math.PI*2);
+            ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.fill();
+            
+            ctx.fillStyle = '#000';
+            ctx.font = `900 ${r*0.85}px Arial`; 
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(this.id, 0, r*0.08);
+        }
+
+        // 高光
+        ctx.beginPath(); ctx.arc(-r*0.35, -r*0.35, r*0.25, 0, Math.PI*2);
+        ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.fill();
+
+        ctx.restore();
+    }
+
+    update() {
+        if (!this.active) return;
+        if (this.vel.mag() > MAX_VELOCITY) this.vel = this.vel.normalize().mult(MAX_VELOCITY);
+        this.pos = this.pos.add(this.vel);
+        this.vel = this.vel.mult(FRICTION);
+        if (this.vel.mag() < 0.05) this.vel = new Vector(0, 0);
+    }
+}
+
+// --- 4. 全局变量 ---
+const canvas = document.getElementById('poolCanvas');
+const ctx = canvas.getContext('2d');
+
+let width, height, scale;
+let playArea = { x:0, y:0, w:0, h:0 };
+let balls = [];
+let pockets = [];
+let cueBall;
+let isDragging = false, dragStart = new Vector(0,0), dragCurrent = new Vector(0,0);
+let ballsMoving = false;
+let isShooting = false, cueStickOffset = 0, shotPowerVector = null;
+let currentPlayer = 1, playerTypes = { 1: null, 2: null };
+let firstHit = null, turnPotted = [];
+let isBreakShot = true;
+
+// --- 5. 初始化 ---
+window.onload = () => { initCanvas(); requestAnimationFrame(gameLoop); };
+window.onresize = () => initCanvas();
+
+function initCanvas() {
+    let container = document.getElementById('game-area');
+    let mw = container.clientWidth, mh = container.clientHeight;
+    let ratio = 1.9; 
+    if (mh / mw > ratio) { width = mw - 10; height = width * ratio; }
+    else { height = mh - 10; width = height / ratio; }
+
+    canvas.width = width; canvas.height = height;
+    scale = width / 400;
+
+    let rw = RAIL_WIDTH_BASE * scale;
+    playArea = { x: rw, y: rw, w: width - rw*2, h: height - rw*2 };
+    
+    initGame();
+}
+
+function initGame() {
+    balls = [];
+    currentPlayer = 1; 
+    playerTypes = { 1: null, 2: null };
+    isBreakShot = true;
+    updateUI();
+    document.getElementById('message-modal').style.display = 'none';
+
+    let r = BALL_RADIUS_BASE * scale;
+    cueBall = new Ball(width/2, height*0.75, 0);
+    balls.push(cueBall);
+
+    let startY = height * 0.28; 
+    let d = r * 2.1; 
+    
+    let layout = [1, 9, 2, 3, 8, 10, 13, 14, 5, 12, 11, 4, 15, 6, 7];
+    let idx = 0;
+    for(let row=0; row<5; row++) {
+        let rx = width/2 - (row*d)/2;
+        for(let col=0; col<=row; col++) {
+            let id = layout[idx++];
+            if(row===2 && col===1) balls.push(new Ball(rx + col*d, startY - row*d*0.85, 8));
+            else if(id===8) balls.push(new Ball(rx + col*d, startY - row*d*0.85, 1));
+            else balls.push(new Ball(rx + col*d, startY - row*d*0.85, id));
+        }
+    }
+
+    // 核心修改：将袋口中心刚好放在 PlayArea 的四个角上
+    // 之前的 offset 会导致袋口偏出墙外
+    let px = playArea.x, py = playArea.y, pw = playArea.w, ph = playArea.h;
+    pockets = [
+        new Vector(px, py), 
+        new Vector(px + pw, py),
+        new Vector(px, py + ph/2), 
+        new Vector(px + pw, py + ph/2),
+        new Vector(px, py + ph), 
+        new Vector(px + pw, py + ph)
+    ];
+}
+
+// --- 6. 交互 ---
+function getPos(e) {
+    let r = canvas.getBoundingClientRect();
+    let x = e.touches ? e.touches[0].clientX : e.clientX;
+    let y = e.touches ? e.touches[0].clientY : e.clientY;
+    return new Vector(x - r.left, y - r.top);
+}
+
+canvas.addEventListener('mousedown', e=>onInputStart(getPos(e)));
+canvas.addEventListener('touchstart', e=>{e.preventDefault(); onInputStart(getPos(e));}, {passive:false});
+window.addEventListener('mousemove', e=>onInputMove(getPos(e)));
+window.addEventListener('touchmove', e=>{if(isDragging)e.preventDefault(); onInputMove(getPos(e));}, {passive:false});
+window.addEventListener('mouseup', onInputEnd);
+window.addEventListener('touchend', onInputEnd);
+
+function onInputStart(p) {
+    if(ballsMoving || isShooting || !cueBall.active) return;
+    if(p.dist(cueBall.pos) < BALL_RADIUS_BASE*scale*5) {
+        isDragging=true; dragStart=p; dragCurrent=p;
+    }
+}
+function onInputMove(p) { if(isDragging) dragCurrent=p; }
+
+function onInputEnd() {
+    if(!isDragging) return;
+    isDragging=false;
+    let v = dragStart.sub(dragCurrent);
+    let p = v.mag()*0.15;
+    if(p > 1.5) {
+        isShooting=true; 
+        if(p>MAX_POWER) p=MAX_POWER;
+        shotPowerVector = v.normalize().mult(p);
+        cueStickOffset = 20 + p*4;
+        turnPotted = []; 
+    }
+}
+
+// --- 7. 渲染 (Visual Layering Fix) ---
+function drawTable() {
+    let rw = RAIL_WIDTH_BASE * scale;
+    let cw = CUSHION_WIDTH_BASE * scale;
+    
+    // 1. 木框
+    ctx.fillStyle = '#4a3025'; ctx.fillRect(0, 0, width, height);
+    // 2. 台呢
+    ctx.fillStyle = '#004477'; ctx.fillRect(playArea.x, playArea.y, playArea.w, playArea.h);
+    
+    // 3. 胶边 (Blue Strips)
+    ctx.fillStyle = '#002b4d';
+    let px = playArea.x, py = playArea.y, pw = playArea.w, ph = playArea.h;
+    ctx.fillRect(px, py - cw, pw, cw); 
+    ctx.fillRect(px, py + ph, pw, cw);
+    ctx.fillRect(px - cw, py, cw, ph); 
+    ctx.fillRect(px + pw, py, cw, ph);
+
+    // 4. 袋口 (Black Holes) - 绘制在胶边之上!
+    let pr = BALL_RADIUS_BASE * scale * POCKET_RADIUS_MULT;
+    ctx.fillStyle = '#000';
+    pockets.forEach(p => {
+        ctx.beginPath(); ctx.arc(p.x, p.y, pr, 0, Math.PI*2); ctx.fill();
+        ctx.strokeStyle = '#111'; ctx.lineWidth = 2; ctx.stroke();
+    });
+
+    // 5. 装饰点
+    ctx.fillStyle = '#aaa';
+    [1,2,3].forEach(i => {
+        ctx.beginPath(); ctx.arc(width/4*i, rw/2, 3, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(width/4*i, height-rw/2, 3, 0, Math.PI*2); ctx.fill();
+    });
+}
+
+function drawAim(cue, dir, scale) {
+    if(!dir || dir.mag()===0) return;
+    let r = BALL_RADIUS_BASE*scale;
+    let maxD = 1200, closeD = maxD, target = null;
+    
+    for(let b of balls) {
+        if(!b.active || b.id===0) continue;
+        let to = b.pos.sub(cue);
+        let t = to.dot(dir);
+        if(t<=0) continue;
+        let d2 = to.mag()*to.mag() - t*t;
+        if(d2 < (2*r)*(2*r)) {
+            let back = Math.sqrt((2*r)*(2*r)-d2);
+            let d = t - back;
+            if(d<closeD && d>0) { closeD=d; target=b; }
+        }
+    }
+    
+    let end = cue.add(dir.mult(closeD));
+    ctx.beginPath(); ctx.moveTo(cue.x, cue.y); ctx.lineTo(end.x, end.y);
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth=2; ctx.setLineDash([6,4]); ctx.stroke(); ctx.setLineDash([]);
+    
+    if(target) {
+        ctx.beginPath(); ctx.arc(end.x, end.y, r, 0, Math.PI*2);
+        ctx.strokeStyle='#fff'; ctx.lineWidth=1; ctx.stroke();
+        let norm = target.pos.sub(end).normalize();
+        let guide = target.pos.add(norm.mult(100*scale));
+        ctx.beginPath(); ctx.moveTo(target.pos.x, target.pos.y); ctx.lineTo(guide.x, guide.y);
+        ctx.lineWidth=3; ctx.stroke();
+        let cp = end.add(norm.mult(r));
+        ctx.beginPath(); ctx.arc(cp.x, cp.y, 4, 0, Math.PI*2); ctx.fillStyle='#f00'; ctx.fill();
+    }
+}
+
+// --- 8. 物理 (Critical Fix) ---
+function physics() {
+    let r = BALL_RADIUS_BASE * scale;
+    let potted = [];
+    
+    // 进袋判定半径 (比视觉半径稍小，确保球看起来进去了)
+    let detectionRadius = r * POCKET_RADIUS_MULT * 0.9; 
+
+    // 1. 进袋检测
+    balls.forEach(b => {
+        if (!b.active) return;
+        for (let p of pockets) {
+            if (b.pos.dist(p) < detectionRadius) {
+                b.active = false;
+                b.vel = new Vector(0,0);
+                potted.push(b);
+                return;
+            }
+        }
+    });
+
+    // 2. 撞墙检测 (关键逻辑：靠近袋口时不进行撞墙判定)
+    let px=playArea.x, py=playArea.y, pw=playArea.w, ph=playArea.h;
+    let pocketSafeZone = r * 2.0; // 在袋口2倍半径内忽略墙壁碰撞
+
+    balls.forEach(b => {
+        if (!b.active) return;
+
+        // 检查是否靠近任何袋口
+        let nearPocket = false;
+        for (let p of pockets) {
+            if (b.pos.dist(p) < pocketSafeZone) {
+                nearPocket = true;
+                break;
+            }
+        }
+
+        if (!nearPocket) {
+            if (b.pos.x < px+r) { b.pos.x = px+r; b.vel.x *= -WALL_BOUNCE; }
+            if (b.pos.x > px+pw-r) { b.pos.x = px+pw-r; b.vel.x *= -WALL_BOUNCE; }
+            if (b.pos.y < py+r) { b.pos.y = py+r; b.vel.y *= -WALL_BOUNCE; }
+            if (b.pos.y > py+ph-r) { b.pos.y = py+ph-r; b.vel.y *= -WALL_BOUNCE; }
+        }
+    });
+
+    // 3. 球体碰撞
+    for(let i=0; i<balls.length; i++){
+        for(let j=i+1; j<balls.length; j++){
+            let b1=balls[i], b2=balls[j];
+            if(!b1.active || !b2.active) continue;
+            let dist = b1.pos.dist(b2.pos);
+            if(dist < r*2) {
+                if(b1.id===0 && !firstHit) firstHit=b2.id;
+                if(b2.id===0 && !firstHit) firstHit=b1.id;
+                
+                let n = b2.pos.sub(b1.pos).normalize();
+                let rel = b1.vel.sub(b2.vel);
+                let imp = rel.dot(n);
+                
+                let pen = r*2 - dist;
+                b1.pos = b1.pos.sub(n.mult(pen*0.5));
+                b2.pos = b2.pos.add(n.mult(pen*0.5));
+
+                if(imp > 0) {
+                    b1.vel = b1.vel.sub(n.mult(imp));
+                    b2.vel = b2.vel.add(n.mult(imp));
+                }
+            }
+        }
+    }
+    return potted;
+}
+
+// --- 9. 循环 ---
+function gameLoop() {
+    ctx.clearRect(0,0,width,height);
+    drawTable();
+
+    let moving = false;
+    if(isShooting) {
+        cueStickOffset -= 35;
+        if(cueStickOffset<=0) { 
+            cueStickOffset=0; 
+            isShooting=false; 
+            cueBall.vel=shotPowerVector; 
+            ballsMoving=true; 
+        }
+    }
+    balls.forEach(b=>{ if(b.vel.mag()>0) moving=true; b.update(); });
+    
+    let p = physics();
+    if(p.length) turnPotted.push(...p);
+
+    balls.forEach(b=>b.draw(ctx, scale));
+
+    if((isDragging || isShooting) && cueBall.active) {
+        let v = isShooting ? shotPowerVector : dragStart.sub(dragCurrent);
+        let dir = v.normalize();
+        if(isDragging && !isShooting && !ballsMoving) drawAim(cueBall.pos, dir, scale);
+        
+        let ang = Math.atan2(dir.y, dir.x);
+        let dist = isShooting ? cueStickOffset : (20 + v.mag()*0.15*4);
+        let r = BALL_RADIUS_BASE*scale;
+        
+        ctx.save(); ctx.translate(cueBall.pos.x, cueBall.pos.y); ctx.rotate(ang);
+        let sx = -(r+dist);
+        ctx.fillStyle='#eee'; ctx.fillRect(sx-6, -4, 6, 8);
+        ctx.fillStyle='#0288d1'; ctx.fillRect(sx-2, -4, 2, 8);
+        ctx.fillStyle='#d84315'; ctx.beginPath(); 
+        ctx.moveTo(sx-6,-4); ctx.lineTo(sx-300,-7); ctx.lineTo(sx-300,7); ctx.lineTo(sx-6,4); ctx.fill();
+        ctx.restore();
+    }
+
+    if(ballsMoving && !moving && !isShooting) {
+        ballsMoving=false; handleTurn(); firstHit=null; turnPotted=[];
+    }
+    requestAnimationFrame(gameLoop);
+}
+
+// --- 10. 规则 ---
+function handleTurn() {
+    let cueIn=false, blackIn=false, s=0, f=0;
+    let mt = playerTypes[currentPlayer];
+    
+    turnPotted.forEach(b=>{
+        if(b.id===0) cueIn=true;
+        else if(b.id===8) blackIn=true;
+        else if(b.id<8) s++;
+        else f++;
+    });
+
+    if(isBreakShot && blackIn) {
+        showGameOver("重新开球", "开球黑八进袋 (娱乐规则)", false);
+        return;
+    }
+
+    if(blackIn) {
+        let others = balls.filter(b=>b.active && b.id!==0 && b.id!==8);
+        let left = 0;
+        if(mt) left = others.filter(b => (mt==='solids' && b.id<8) || (mt==='stripes' && b.id>8)).length;
+        else left = 1; 
+
+        if(cueIn || left>0) showGameOver("犯规判负", "黑八提前入袋 / 白球同进", false);
+        else showGameOver("恭喜获胜", `玩家 ${currentPlayer} 完美清台！`, true);
+        return;
+    }
+
+    if(cueIn) {
+        cueBall.active=true; cueBall.vel=new Vector(0,0); cueBall.pos=new Vector(width/2, height*0.75);
+        switchTurn(); 
+        isBreakShot = false;
+        return;
+    }
+
+    if(!playerTypes[1] && !playerTypes[2] && (s>0||f>0)) {
+        if(s>0 && f===0) { playerTypes[currentPlayer]='solids'; playerTypes[currentPlayer===1?2:1]='stripes'; }
+        else if(f>0 && s===0) { playerTypes[currentPlayer]='stripes'; playerTypes[currentPlayer===1?2:1]='solids'; }
+        updateUI();
+    }
+
+    let foul = !firstHit;
+    if(!foul && mt) {
+        if(mt==='solids' && firstHit>8) foul=true;
+        if(mt==='stripes' && firstHit<8 && firstHit!==0) foul=true;
+        if(firstHit===8) {
+            let cnt = balls.filter(b=>b.active && ((mt==='solids'&&b.id<8)||(mt==='stripes'&&b.id>8))).length;
+            if(cnt>0) foul=true;
+        }
+    }
+
+    let valid = false;
+    if(!foul) {
+        if(mt) { if((mt==='solids' && s>0) || (mt==='stripes' && f>0)) valid=true; }
+        else if(s>0 || f>0) valid=true;
+    }
+    
+    if(!valid || foul) switchTurn();
+    isBreakShot = false;
+}
+
+function switchTurn() { currentPlayer=currentPlayer===1?2:1; updateUI(); }
+function updateUI() {
+    let p1=document.getElementById('p1-card'), p2=document.getElementById('p2-card');
+    let t1=document.getElementById('p1-type'), t2=document.getElementById('p2-type');
+    if(currentPlayer===1){ p1.classList.add('active-turn'); p2.classList.remove('active-turn'); }
+    else{ p1.classList.remove('active-turn'); p2.classList.add('active-turn'); }
+    let map = {'solids':'全色 (1-7)', 'stripes':'花色 (9-15)', null:'未定'};
+    t1.innerText=playerTypes[1]?map[playerTypes[1]]:(currentPlayer===1?'击球...':'等待');
+    t2.innerText=playerTypes[2]?map[playerTypes[2]]:(currentPlayer===2?'击球...':'等待');
+}
+
+function showGameOver(titleText, descText, isWin) {
+    let title = document.getElementById('msg-title');
+    title.innerText = titleText;
+    title.className = isWin ? 'title-win' : 'title-lose';
+    document.getElementById('msg-desc').innerText = descText;
+    document.getElementById('message-modal').style.display='block';
+}
+
+function resetGame() { initGame(); }
+</script>
+</body>
+</html>

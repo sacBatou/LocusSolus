@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>心连心 - 亲子话题卡片</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.3.1",
+        "react-dom/client": "https://esm.sh/react-dom@18.3.1/client",
+        "framer-motion": "https://esm.sh/framer-motion@10.16.4?external=react,react-dom",
+        "lucide-react": "https://esm.sh/lucide-react@0.292.0?external=react,react-dom"
+      }
+    }
+    </script>
+
+    <style>
+        body {
+            overscroll-behavior: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        .writing-vertical-rl {
+            writing-mode: vertical-rl;
+            text-orientation: upright;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 h-screen w-screen overflow-hidden">
+    <div id="root" class="h-full w-full"></div>
+
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect, useRef } from 'react';
+        import { createRoot } from 'react-dom/client';
+        import { motion, AnimatePresence, useAnimation, useMotionValue, useTransform } from 'framer-motion';
+        import { 
+          Heart, History, PlusCircle, Settings, MessageCircle, ChevronUp, ChevronDown,
+          Edit3, Trash2, Save, X, CornerUpLeft, ArrowRight, 
+          ArrowLeft, ArrowUp, ArrowDown, RefreshCw, Lightbulb
+        } from 'lucide-react';
+
+        // --- 话题库（已替换为 PDF 内容） ---
+        const INITIAL_TOPICS = [
+            "你最近最喜欢做的一件事情是什么？ [cite: 1]",
+            "你有没有什么事情是从没做过，但是想尝试做一下的？ [cite: 1]",
+            "你和朋友之间，最难忘记的事情是什么？ [cite: 1]",
+            "你有没有和朋友吵过架，为什么？ [cite: 1, 6]",
+            "你觉得自己最厉害的地方是什么？ [cite: 1, 8]",
+            "你想过自己长大可以靠什么赚钱么？ [cite: 1]",
+            "你知道哪些节日是中国传统节日？哪些是外国节日？ [cite: 2, 4]",
+            "你觉得我们为什么要去旅行？ [cite: 3]",
+            "如果你可以改变爸爸妈妈身上一个缺点，你想改变什么？ [cite: 5, 7]",
+            "你上一次帮助别人是什么时候？ [cite: 9]",
+            "你看过印象最深的电影是什么，为什么？ [cite: 10]",
+            "你愿意表达自己的感受么，开心、伤心、愤怒？ [cite: 10]",
+            "你觉得怎么样的朋友才能称为好朋友？ [cite: 10, 98]",
+            "你有没有想过要发明什么东西？ [cite: 10]",
+            "在一个合作的团队里，你会希望成为领导者么？ [cite: 10]",
+            "如果你不能成为团队的领导者，你应该怎样当一个好队友？ [cite: 10]",
+            "你觉得你的阅读对你的写作有影响么？ [cite: 11]",
+            "你觉得什么样的生活可以被称为幸福的生活？ [cite: 11]",
+            "你喜欢徒步么？ [cite: 11]",
+            "你上一次生爸爸妈妈的气是什么时候？ [cite: 11]",
+            "如果老师说错了，你会指正老师的错误么？ [cite: 11]",
+            "你觉得在你的学习中，考试的分数很重要么？ [cite: 11]",
+            "你对你长大以后的生活有什么样子的期待？ [cite: 12, 13]",
+            "如果可以许愿立刻改掉自己一个缺点，那会是什么？ [cite: 14]",
+            "如果你可以拥有一个与众不同的特质，那会是什么？ [cite: 15]",
+            "你最喜欢学校的哪一门课，为什么？ [cite: 16]",
+            "你会怎么面对失败和挫折？ [cite: 17]",
+            "你认为什么是成功？你如何定义成功？ [cite: 18]",
+            "你觉得是成功的结果重要，还是努力的过程更重要？ [cite: 19]",
+            "你觉得自己是一个很擅长社交的人么，为什么？ [cite: 19]",
+            "你会用什么方法来维持友情？ [cite: 19]",
+            "如果你和最好的朋友之间出现了竞争，你会如何处理？ [cite: 19]",
+            "你认为在友情中，应该保持诚实么？ [cite: 19]",
+            "如果你的朋友想要去做一件无法完成的事情，你会支持还是劝说？ [cite: 19]",
+            "如果你和朋友产生了分歧或争执，你会如何处理？ [cite: 20, 22]",
+            "你觉得阅读对你有什么帮助？ [cite: 21]",
+            "你在学校有没有遇见过欺凌事件？ [cite: 23]",
+            "你最喜欢和家人一起做的事情是什么？ [cite: 24, 64]",
+            "你觉得有个妹妹给生活带来了什么不一样？（想象没妹妹的生活） [cite: 25]",
+            "你认为在一个家庭中，公平性是不是很重要？ [cite: 26]",
+            "你认为家庭和学校，哪一个对你的影响更大？ [cite: 27]",
+            "你喜欢压力和挑战么？ [cite: 27]",
+            "你会因为肤色而不喜欢别人么？ [cite: 27]",
+            "你认为旅行对你来说有什么意义？意味着什么？ [cite: 27]",
+            "你会希望自己一个人去旅游么？ [cite: 27]",
+            "你觉得在一段旅行中，摄影和摄像的记录重要么？ [cite: 27]",
+            "你觉得我们家庭的沟通顺畅么？ [cite: 28]",
+            "如果在家庭沟通中出现了冲突，应该如何解决？ [cite: 28]",
+            "你觉得家庭中需要隐私和个人空间么？ [cite: 28]",
+            "你觉得我们家有没有提供丰富的娱乐活动？ [cite: 28]",
+            "你觉得情绪管理重要么？ [cite: 28]",
+            "你愿意在公众场合发表演讲么？ [cite: 28]",
+            "如果你可以变成一种动物，你会希望变成什么？ [cite: 29]",
+            "如果可以创造一个新的全球性节日，它会是什么样子的？ [cite: 29]",
+            "如果你可以和卡通人物做朋友，它会是谁？ [cite: 29]",
+            "如果你可以控制一种元素（火水风土），你会选择哪种？ [cite: 29]",
+            "你做过最美的梦是什么样子的？ [cite: 29]",
+            "你有一根魔法棒，可以实现三个愿望，你会选择什么？ [cite: 29]",
+            "你认为上海话重要么？你会说吗？ [cite: 30, 32]",
+            "你是否在意别人对你的评价？ [cite: 31]",
+            "如果你是班长，你有哪些方法让班级变得更团结？ [cite: 33, 34, 35]",
+            "你最近有没有什么目标，打算如何实现？ [cite: 36, 37]",
+            "你有没有遇到过没有自信的情况？ [cite: 38]",
+            "你有没有想学会的一首歌，是什么？ [cite: 39, 40]",
+            "你觉得自己是一个有毅力、乐观的人么？ [cite: 41]",
+            "你觉得自己是一个很有专注力的人吗？如何做到的？ [cite: 42, 44]",
+            "你怎么看待有的男生会扎辫子？ [cite: 43]",
+            "你觉得自己抗挫折能力强大么？ [cite: 45]",
+            "你觉得自己是一个擅长时间管理的人么？ [cite: 46, 47]",
+            "如果爸爸妈妈在你面前吵架很凶，你会怎么办？ [cite: 48]",
+            "如果你遇到一条会说话的河流，它会告诉你什么故事？ [cite: 48]",
+            "如果你突然变成蚂蚁这么小，你会经历哪些冒险？ [cite: 48]",
+            "你相信有外星生物的存在么？ [cite: 48, 97]",
+            "你要写一封信给10年后的自己，你会怎么写？ [cite: 48]",
+            "如果世界全都是小朋友管理，你觉得会变成什么样？ [cite: 48]",
+            "如果可以改变你的年龄，你会想变成几岁，为什么？ [cite: 49]",
+            "如果让你给家庭成员起绰号，分别是什么？ [cite: 50, 51]",
+            "你觉得我们每个家庭成员最擅长的一个技能是什么？ [cite: 52]",
+            "如果可以和星星聊天，它会告诉你什么故事？ [cite: 53]",
+            "我们家里谁最搞笑，为什么？ [cite: 54]",
+            "在社交场合中，你是主动的人还是被动的人？ [cite: 55]",
+            "在社交场合中，你更愿意倾听还是更愿意表达？ [cite: 56]",
+            "如果你好朋友的朋友是你讨厌的人，你会怎么办？ [cite: 56]",
+            "如果你的朋友取得巨大成功，你会开心还是妒忌？ [cite: 56]",
+            "如果好朋友对你产生了误解，你会选择解释清楚么？ [cite: 56]",
+            "你喜欢朋友给你起绰号么？你会给别人起吗？ [cite: 56]",
+            "你觉得好朋友的短暂分离会影响友情么？ [cite: 56]",
+            "你觉得家里对你的教育是事无巨细还是自我管理为主？ [cite: 57]",
+            "爸爸妈妈会不会有时候让你觉得很烦？ [cite: 57]",
+            "你希望爸爸妈妈怎么样来鼓励你？ [cite: 57]",
+            "如果让你给妹妹安排一个惊喜，你会怎么安排？ [cite: 57]",
+            "说三件你觉得妈妈最喜欢的事情，爸爸呢？ [cite: 57]",
+            "你认为善良可以改变这个世界么？ [cite: 59]",
+            "什么时候你感觉自己很幸福？ [cite: 62]",
+            "如果你能让一种东西从世界上立刻消失，你会选什么？ [cite: 65, 66, 67]",
+            "你最喜欢父母的哪些特点？父母做什么会让你困扰？ [cite: 68]",
+            "当你想找人聊心事，你会找谁？ [cite: 68]",
+            "别人夸你什么的时候，你会觉得很高兴？ [cite: 68]",
+            "做什么事的时候会完全忘记时间？ [cite: 69]",
+            "你认为人可以为了保守秘密而说谎么？ [cite: 69]",
+            "你觉得善意的谎言是可以被接受的么？ [cite: 69]",
+            "你的父母做过什么事让你觉得特别暖心？ [cite: 69]",
+            "如果你可以变成一个电影角色，你想变成谁？ [cite: 70]",
+            "你在什么时候会觉得压力很大？ [cite: 70]",
+            "如果你可以隐形一整天，你会怎么安排？ [cite: 71]",
+            "如果你可以选择一项超能力，你会选择什么？ [cite: 71]",
+            "拿到一盒美味的点心，你会立刻想和谁分享？ [cite: 72]",
+            "有什么和家人的回忆，一想到就忍不住笑出来？ [cite: 73]",
+            "如果你输了一场重要的比赛，你会？ [cite: 75]",
+            "如果你可以出名，你希望是因为什么？ [cite: 76]",
+            "如果你是地球，你想对人类说什么？ [cite: 78]",
+            "你觉得道歉重要么？为什么？ [cite: 98]",
+            "说三个爸爸身上的缺点，妈妈呢？ [cite: 99]",
+            "为什么外卖员、快递员很辛苦，却赚不到太多钱？ [cite: 99]"
+        ];
+
+        // --- 引导逻辑（已调整以匹配 PDF 内容） ---
+        const generateSuggestions = (topicText) => {
+            const defaults = [
+                "为什么你会这么想呢？",
+                "这让你有什么样的感觉？",
+                "能不能举个具体的例子？",
+                "如果可以重来，你会怎么做？",
+                "你觉得这对你有什么影响？",
+                "还有其他的原因吗？"
+            ];
+            const rules = [
+                { keyword: "朋友", questions: ["你觉得好朋友之间应该怎么相处？", "如果朋友让你伤心了，你会怎么做？", "诚实和保守秘密哪个更重要？", "你怎么判断一个人是不是好朋友？", "你会如何维持一段长久的友谊？"] },
+                { keyword: "旅行", questions: ["旅行对你来说是放松还是学习？", "你最喜欢的旅行目的地是哪里？", "你觉得旅行中记录（摄影）重要吗？", "你更喜欢一个人还是和全家人一起？", "行程中让你印象最深的事是什么？"] },
+                { keyword: "学校", questions: ["你觉得考试分数能代表你的能力吗？", "如果你是老师，你会怎么管理班级？", "你在学校觉得最快乐的时刻是什么？", "你觉得学校和家里哪个对你影响大？", "你会指正老师的错误吗？"] },
+                { keyword: "爸爸妈妈", questions: ["你希望我们怎么鼓励你？", "你最喜欢我们的哪个特点？", "如果我们吵架了，你会怎么想？", "你觉得我们的教育方式合适吗？", "有哪些家里的规矩是你最想改的？"] },
+                { keyword: "如果", questions: ["这种超能力你想用来解决什么问题？", "那个世界里会有大人吗？", "你会把这个秘密告诉谁？", "如果梦想成真了，你第一件事做什么？", "这会改变你现在的生活吗？"] },
+                { keyword: "社交", questions: ["你是更喜欢表达还是更喜欢倾听？", "你觉得自己是主动交朋友的人吗？", "如果你被误解了，你会去解释吗？", "你会在意别人给你的评价吗？", "你会给别人起绰号吗？"] },
+                { keyword: "成功", questions: ["你觉得努力的过程更值得被记录吗？", "失败的时候你会怎么安慰自己？", "你心目中成功的人是谁？", "你觉得自己最有毅力的时候是什么时候？", "你会如何定义自己的成功？"] },
+                { keyword: "家庭", questions: ["你觉得公平在家里重要吗？", "我们家最让你感到暖心的瞬间是什么？", "你觉得家里需要隐私空间吗？", "你最喜欢和全家人一起做什么？", "如果你可以重新设计我们的家，会是什么样？"] },
+                { keyword: "情绪", questions: ["当压力大的时候，你会怎么排解？", "你觉得自己抗挫折的能力强吗？", "你会主动表达自己的伤心和愤怒吗？", "什么时候你会觉得自己特别自信？", "你觉得自己是个乐观的人吗？"] }
+            ];
+            for (let rule of rules) {
+                if (topicText.includes(rule.keyword)) {
+                    return [...rule.questions, "为什么你会这么想呢？"].slice(0, 6);
+                }
+            }
+            return defaults;
+        };
+
+        const generateId = () => Math.random().toString(36).substr(2, 9);
+
+        // --- 组件部分 (保持原逻辑) ---
+
+        function HeartToHeartApp() {
+            const [activeTab, setActiveTab] = useState('card');
+            const [topics, setTopics] = useState([]);
+            const [history, setHistory] = useState([]);
+            const [currentIndex, setCurrentIndex] = useState(-1);
+            const [notes, setNotes] = useState({});
+            
+            useEffect(() => {
+                const savedTopics = JSON.parse(localStorage.getItem('h2h_topics'));
+                const savedHistory = JSON.parse(localStorage.getItem('h2h_history'));
+                const savedNotes = JSON.parse(localStorage.getItem('h2h_notes'));
+
+                let loadedTopics = [];
+                if (savedTopics && savedTopics.length > 0) {
+                    loadedTopics = savedTopics;
+                } else {
+                    loadedTopics = INITIAL_TOPICS.map(text => ({ id: generateId(), text, isCustom: false }));
+                    localStorage.setItem('h2h_topics', JSON.stringify(loadedTopics));
+                }
+                setTopics(loadedTopics);
+                if (savedNotes) setNotes(savedNotes);
+                if (savedHistory && savedHistory.length > 0) {
+                    setHistory(savedHistory);
+                    setCurrentIndex(savedHistory.length - 1);
+                } else {
+                    const randomTopic = loadedTopics[Math.floor(Math.random() * loadedTopics.length)];
+                    if (randomTopic) {
+                        setHistory([randomTopic]);
+                        setCurrentIndex(0);
+                    }
+                }
+            }, []);
+
+            useEffect(() => {
+                if (topics.length > 0) localStorage.setItem('h2h_topics', JSON.stringify(topics));
+                if (history.length > 0) localStorage.setItem('h2h_history', JSON.stringify(history));
+                localStorage.setItem('h2h_notes', JSON.stringify(notes));
+            }, [topics, history, notes]);
+
+            const pickNewCard = (currentHistory = history) => {
+                const shownIds = new Set(currentHistory.map(h => h.id));
+                let available = topics.filter(t => !shownIds.has(t.id));
+                if (available.length === 0) available = topics;
+                if (available.length === 0) return;
+                const randomTopic = available[Math.floor(Math.random() * available.length)];
+                const newHistory = [...currentHistory, randomTopic];
+                setHistory(newHistory);
+                setCurrentIndex(newHistory.length - 1);
+            };
+
+            const handleNext = () => {
+                if (currentIndex < history.length - 1) {
+                    setCurrentIndex(curr => curr + 1);
+                } else {
+                    pickNewCard();
+                }
+            };
+
+            const handlePrev = () => {
+                if (currentIndex > 0) {
+                    setCurrentIndex(curr => curr - 1);
+                }
+            };
+
+            const saveNote = (cardId, text) => {
+                setNotes(prev => ({ ...prev, [cardId]: text }));
+            };
+
+            const addCustomTopic = (text) => {
+                const newTopic = { id: generateId(), text, isCustom: true };
+                setTopics(prev => [newTopic, ...prev]);
+            };
+
+            const deleteCustomTopic = (id) => {
+                setTopics(prev => prev.filter(t => t.id !== id));
+            };
+
+            const resetApp = () => {
+                localStorage.removeItem('h2h_history');
+                setHistory([]);
+                setCurrentIndex(-1);
+                const randomTopic = topics[Math.floor(Math.random() * topics.length)];
+                if (randomTopic) {
+                    setHistory([randomTopic]);
+                    setCurrentIndex(0);
+                }
+            };
+
+            return (
+                <div className="flex flex-col h-screen bg-gradient-to-br from-orange-50 via-pink-50 to-blue-50 text-slate-800 font-sans overflow-hidden">
+                    <header className="flex-none pt-12 pb-4 px-6 flex justify-between items-center z-10">
+                        <div>
+                            <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-pink-500 to-orange-500">
+                                心连心
+                            </h1>
+                            <p className="text-xs text-slate-400 font-medium tracking-wide">亲子话题时光</p>
+                        </div>
+                        <div className="w-10 h-10 bg-white/60 backdrop-blur-md rounded-full flex items-center justify-center shadow-sm">
+                            <Heart className="w-5 h-5 text-pink-500 fill-pink-500" />
+                        </div>
+                    </header>
+
+                    <main className="flex-1 relative w-full max-w-md mx-auto overflow-hidden">
+                        {activeTab === 'card' && (
+                            history.length > 0 ? (
+                                <CardStack 
+                                    card={history[currentIndex]} 
+                                    onSwipeLeft={handleNext}
+                                    onSwipeRight={handlePrev}
+                                    onSaveNote={saveNote}
+                                    existingNote={notes[history[currentIndex]?.id] || ''}
+                                    canGoBack={currentIndex > 0}
+                                />
+                            ) : (
+                                <div className="flex flex-col items-center justify-center h-full text-slate-400 gap-4">
+                                    <p>正在生成话题卡片...</p>
+                                    <button 
+                                        onClick={resetApp}
+                                        className="flex items-center gap-2 px-4 py-2 bg-white rounded-full shadow-sm text-sm text-pink-500"
+                                    >
+                                        <RefreshCw size={14} /> 点击刷新
+                                    </button>
+                                </div>
+                            )
+                        )}
+
+                        {activeTab === 'history' && (
+                            <HistoryView 
+                                history={history} 
+                                notes={notes} 
+                                onSelect={(index) => {
+                                    setCurrentIndex(index);
+                                    setActiveTab('card');
+                                }} 
+                            />
+                        )}
+
+                        {activeTab === 'custom' && (
+                            <CustomDeckView 
+                                topics={topics} 
+                                onAdd={addCustomTopic} 
+                                onDelete={deleteCustomTopic} 
+                            />
+                        )}
+                    </main>
+
+                    <nav className="flex-none h-20 bg-white/80 backdrop-blur-xl border-t border-slate-100 flex justify-around items-center pb-4 px-6 shadow-[0_-5px_20px_rgba(0,0,0,0.03)] z-50">
+                        <NavButton 
+                            active={activeTab === 'history'} 
+                            onClick={() => setActiveTab('history')} 
+                            icon={<History size={24} />} 
+                            label="回忆" 
+                        />
+                        <div className="relative -top-5">
+                            <button 
+                                onClick={() => setActiveTab('card')}
+                                className={`w-16 h-16 rounded-full flex items-center justify-center shadow-lg transition-transform transform ${activeTab === 'card' ? 'bg-gradient-to-tr from-pink-500 to-orange-400 scale-110' : 'bg-white text-slate-400'}`}
+                            >
+                                <MessageCircle size={28} className={activeTab === 'card' ? 'text-white' : 'text-slate-400'} />
+                            </button>
+                        </div>
+                        <NavButton 
+                            active={activeTab === 'custom'} 
+                            onClick={() => setActiveTab('custom')} 
+                            icon={<PlusCircle size={24} />} 
+                            label="题库" 
+                        />
+                    </nav>
+                </div>
+            );
+        }
+
+        const NavButton = ({ active, onClick, icon, label }) => (
+            <button 
+                onClick={onClick} 
+                className={`flex flex-col items-center justify-center w-12 transition-colors duration-300 ${active ? 'text-pink-500' : 'text-slate-400'}`}
+            >
+                {icon}
+                <span className="text-[10px] mt-1 font-medium">{label}</span>
+            </button>
+        );
+
+        const CardStack = ({ card, onSwipeLeft, onSwipeRight, onSaveNote, existingNote, canGoBack }) => {
+            const x = useMotionValue(0);
+            const y = useMotionValue(0);
+            const rotate = useTransform(x, [-200, 200], [-12, 12]);
+            
+            const leftHintOpacity = useTransform(x, [50, 150], [0, 1]);
+            const rightHintOpacity = useTransform(x, [-50, -150], [0, 1]);
+            const topHintOpacity = useTransform(y, [50, 150], [0, 1]);
+            const bottomHintOpacity = useTransform(y, [-50, -150], [0, 1]);
+
+            const [showNoteSheet, setShowNoteSheet] = useState(false);
+            const [isSuggestionMode, setIsSuggestionMode] = useState(false);
+            
+            const controls = useAnimation();
+            const [cardColor, setCardColor] = useState('bg-white');
+
+            useEffect(() => {
+                const colors = ['bg-white', 'bg-orange-50', 'bg-pink-50', 'bg-blue-50', 'bg-yellow-50'];
+                const random = colors[Math.floor(Math.random() * colors.length)];
+                setCardColor(random);
+                setShowNoteSheet(false);
+                setIsSuggestionMode(false);
+                
+                x.set(0);
+                y.set(0);
+                controls.set({ x: 0, y: 0, rotate: 0 });
+            }, [card.id]);
+
+            const handleRestore = async () => {
+                if (isSuggestionMode) {
+                    setIsSuggestionMode(false);
+                    await controls.start({ x: 0, y: 0, rotate: 0 });
+                }
+            };
+
+            const handleDragEnd = async (event, info) => {
+                const offset = info.offset;
+                const velocity = info.velocity;
+
+                if (isSuggestionMode) {
+                    handleRestore();
+                    return;
+                }
+
+                if (offset.y < -100) {
+                    setShowNoteSheet(true);
+                    controls.start({ x: 0, y: 0, rotate: 0 });
+                    return;
+                }
+
+                if (offset.y > 100) {
+                    setIsSuggestionMode(true);
+                    controls.start({ x: 0, y: -200, rotate: 0 });
+                    return;
+                }
+
+                const swipeThreshold = 100;
+                const velocityThreshold = 500;
+
+                if (offset.x < -swipeThreshold || velocity.x < -velocityThreshold) {
+                    await controls.start({ x: -500, opacity: 0, rotate: -20, transition: { duration: 0.2 } });
+                    onSwipeLeft();
+                    controls.set({ x: 500, opacity: 0, rotate: 20 });
+                    controls.start({ x: 0, opacity: 1, rotate: 0, transition: { type: 'spring', damping: 25 } });
+                } 
+                else if ((offset.x > swipeThreshold || velocity.x > velocityThreshold) && canGoBack) {
+                    await controls.start({ x: 500, opacity: 0, rotate: 20, transition: { duration: 0.2 } });
+                    onSwipeRight();
+                    controls.set({ x: -500, opacity: 0, rotate: -20 });
+                    controls.start({ x: 0, opacity: 1, rotate: 0, transition: { type: 'spring', damping: 25 } });
+                } else {
+                    controls.start({ x: 0, y: 0, rotate: 0, transition: { type: 'spring', stiffness: 300, damping: 20 } });
+                }
+            };
+
+            return (
+                <div className="relative w-full h-full flex flex-col items-center justify-center px-6 perspective-1000">
+                    {!isSuggestionMode && !showNoteSheet && (
+                        <>
+                            <motion.div style={{ opacity: leftHintOpacity }} className="absolute left-6 top-1/2 -translate-y-1/2 flex items-center gap-2 z-0 pointer-events-none">
+                                <ArrowRight className="text-orange-400 animate-pulse" size={32} />
+                                <span className="writing-vertical-rl text-orange-400 font-bold tracking-widest text-sm">右滑查看上一张卡片</span>
+                            </motion.div>
+                            <motion.div style={{ opacity: rightHintOpacity }} className="absolute right-6 top-1/2 -translate-y-1/2 flex items-center gap-2 z-0 pointer-events-none">
+                                <span className="writing-vertical-rl text-pink-400 font-bold tracking-widest text-sm">左滑查看下一张卡片</span>
+                                <ArrowLeft className="text-pink-400 animate-pulse" size={32} />
+                            </motion.div>
+                            <motion.div style={{ opacity: topHintOpacity }} className="absolute top-16 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 z-0 pointer-events-none">
+                                <span className="text-blue-400 font-bold tracking-widest text-sm">下滑查看更多引导</span>
+                                <ArrowDown className="text-blue-400 animate-bounce" size={28} />
+                            </motion.div>
+                            <motion.div style={{ opacity: bottomHintOpacity }} className="absolute bottom-16 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 z-0 pointer-events-none">
+                                <ArrowUp className="text-slate-400 animate-bounce" size={28} />
+                                <span className="text-slate-400 font-bold tracking-widest text-sm">上滑添加卡片备注</span>
+                            </motion.div>
+                        </>
+                    )}
+
+                    <motion.div
+                        layout 
+                        drag={true}
+                        dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }}
+                        dragElastic={0.7}
+                        dragDirectionLock={true}
+                        style={{ x, y, rotate }}
+                        animate={controls}
+                        onDragEnd={handleDragEnd}
+                        onTap={handleRestore}
+                        className={`relative w-full ${isSuggestionMode ? 'h-[100px] py-4 px-6' : 'aspect-[3/4] max-h-[65vh] p-8'} ${cardColor} rounded-[2.5rem] shadow-[0_20px_50px_-12px_rgba(0,0,0,0.1)] border border-white/50 flex flex-col items-center justify-center text-center cursor-grab active:cursor-grabbing touch-none select-none z-10 transition-colors overflow-hidden`}
+                        initial={false}
+                        transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                    >
+                        <motion.div layout="position" className="w-full h-full flex flex-col items-center justify-center">
+                            <div className={`${isSuggestionMode ? 'hidden' : 'absolute top-6 left-6'}`}>
+                                {card.isCustom && <span className="bg-purple-100 text-purple-600 text-[10px] px-2 py-1 rounded-full font-bold uppercase tracking-wider">自定义</span>}
+                            </div>
+                            {existingNote && !isSuggestionMode && (
+                                <div className="absolute top-6 right-6 text-orange-400">
+                                    <Edit3 size={18} fill="currentColor" className="opacity-50" />
+                                </div>
+                            )}
+                            <motion.h2 layout="position" className={`${isSuggestionMode ? 'text-lg line-clamp-2' : 'text-2xl md:text-3xl'} font-bold text-slate-700 leading-snug transition-all duration-300`}>
+                                {card.text}
+                            </motion.h2>
+                            {!isSuggestionMode && (
+                                <motion.div layout="position" className="absolute bottom-8 text-slate-300 text-sm font-medium tracking-widest uppercase">
+                                    Parenting Card
+                                </motion.div>
+                            )}
+                            {isSuggestionMode && (
+                                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-2 text-slate-400 text-xs flex items-center gap-1 animate-pulse">
+                                    <ChevronDown size={12} /> 点击恢复卡片
+                                </motion.div>
+                            )}
+                        </motion.div>
+                    </motion.div>
+
+                    <AnimatePresence>
+                        {isSuggestionMode && (
+                            <motion.div
+                                initial={{ opacity: 0, y: 50 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: 50 }}
+                                transition={{ delay: 0.1 }}
+                                className="absolute top-[160px] bottom-0 left-0 right-0 px-6 pb-6 overflow-y-auto no-scrollbar z-0"
+                            >
+                                <div className="bg-white/80 backdrop-blur-sm rounded-3xl p-6 shadow-sm border border-white/50">
+                                    <div className="flex items-center gap-2 mb-4 text-blue-500">
+                                        <Lightbulb size={20} className="fill-blue-100" />
+                                        <h3 className="font-bold text-sm tracking-wide">启发式追问</h3>
+                                    </div>
+                                    <div className="space-y-3">
+                                        {generateSuggestions(card.text).map((q, idx) => (
+                                            <motion.div 
+                                                key={idx}
+                                                initial={{ opacity: 0, x: -10 }}
+                                                animate={{ opacity: 1, x: 0 }}
+                                                transition={{ delay: idx * 0.05 + 0.2 }}
+                                                className="bg-blue-50/50 p-3 rounded-xl text-slate-600 text-sm font-medium leading-relaxed border border-blue-50"
+                                            >
+                                                {q}
+                                            </motion.div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+
+                    <AnimatePresence>
+                        {showNoteSheet && (
+                            <NoteSheet 
+                                key="note-sheet"
+                                card={card} 
+                                initialNote={existingNote} 
+                                onSave={onSaveNote} 
+                                onClose={() => setShowNoteSheet(false)} 
+                            />
+                        )}
+                    </AnimatePresence>
+                </div>
+            );
+        };
+
+        const NoteSheet = ({ card, initialNote, onSave, onClose }) => {
+            const [text, setText] = useState(initialNote);
+            const handleSave = () => { onSave(card.id, text); onClose(); };
+
+            return (
+                <motion.div 
+                    initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+                    transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                    className="absolute inset-0 z-50 bg-white/95 backdrop-blur-xl rounded-t-[2.5rem] shadow-[0_-10px_40px_rgba(0,0,0,0.1)] flex flex-col p-6"
+                >
+                    <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-6 flex-none" />
+                    <div className="flex-none mb-4">
+                        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">话题</h3>
+                        <p className="text-lg font-medium text-slate-700">{card.text}</p>
+                    </div>
+                    <textarea
+                        className="flex-1 w-full bg-slate-50 rounded-2xl p-4 text-slate-600 focus:outline-none focus:ring-2 focus:ring-orange-200 resize-none mb-4"
+                        placeholder="记录对话中的闪光点..."
+                        value={text}
+                        onChange={(e) => setText(e.target.value)}
+                    />
+                    <div className="flex gap-4 flex-none">
+                        <button onClick={onClose} className="flex-1 py-4 rounded-2xl font-bold text-slate-500 bg-slate-100">取消</button>
+                        <button onClick={handleSave} className="flex-1 py-4 rounded-2xl font-bold text-white bg-gradient-to-r from-orange-400 to-pink-500 shadow-lg flex items-center justify-center gap-2"><Save size={18} />保存</button>
+                    </div>
+                </motion.div>
+            );
+        };
+
+        const HistoryView = ({ history, notes, onSelect }) => (
+            <div className="h-full overflow-y-auto px-6 pb-24 pt-2 no-scrollbar">
+                <h2 className="text-xl font-bold text-slate-700 mb-6">时光回忆</h2>
+                <div className="grid grid-cols-2 gap-4">
+                    {[...history].reverse().map((card, index) => {
+                        const realIndex = history.length - 1 - index;
+                        return (
+                            <motion.div key={card.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} onClick={() => onSelect(realIndex)} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 relative min-h-[140px] flex flex-col justify-between cursor-pointer">
+                                <p className="text-sm text-slate-600 font-medium line-clamp-4 leading-relaxed">{card.text}</p>
+                                <div className="flex justify-between items-end mt-2">
+                                    <span className="text-[10px] text-slate-300">#{ (realIndex + 1).toString().padStart(3, '0') }</span>
+                                    { notes[card.id] && <div className="w-6 h-6 bg-orange-100 rounded-full flex items-center justify-center"><Edit3 size={12} className="text-orange-500" /></div> }
+                                </div>
+                            </motion.div>
+                        );
+                    })}
+                </div>
+            </div>
+        );
+
+        const CustomDeckView = ({ topics, onAdd, onDelete }) => {
+            const [input, setInput] = useState('');
+            const handleSubmit = (e) => { e.preventDefault(); if (input.trim()) { onAdd(input.trim()); setInput(''); } };
+
+            return (
+                <div className="h-full flex flex-col px-6 pt-2 pb-2">
+                    <h2 className="text-xl font-bold text-slate-700 mb-6">话题库管理</h2>
+                    <form onSubmit={handleSubmit} className="flex gap-2 mb-6">
+                        <input type="text" value={input} onChange={(e) => setInput(e.target.value)} placeholder="添加自定义话题..." className="flex-1 bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm" />
+                        <button type="submit" className="bg-slate-800 text-white rounded-xl w-12 flex items-center justify-center"><PlusCircle size={20} /></button>
+                    </form>
+                    <div className="flex-1 overflow-y-auto no-scrollbar pb-20">
+                        <div className="space-y-3">
+                            {topics.map((topic) => (
+                                <div key={topic.id} className="bg-white rounded-xl p-4 shadow-sm border border-slate-50 flex items-start justify-between gap-3">
+                                    <p className="text-sm text-slate-600">{topic.text}</p>
+                                    {topic.isCustom && <button onClick={() => onDelete(topic.id)} className="text-slate-300 hover:text-red-400 p-1"><Trash2 size={16} /></button>}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<HeartToHeartApp />);
+    </script>
+</body>
+</html>
