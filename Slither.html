@@ -195,7 +195,8 @@
         const input = {
             angle: 0,
             active: false,
-            boost: false
+            boost: false,
+            isMouseDown: false // 新增：记录鼠标是否按下
         };
 
         // DOM 元素
@@ -827,39 +828,107 @@
          * 输入与事件处理
          */
         
-        // 鼠标跟随
-        canvas.addEventListener('mousemove', (e) => {
-            if (gameState !== 'PLAYING') return;
+        // --- PC端鼠标控制逻辑修改 ---
+        
+        function updateMouseDirection(e) {
             const rect = canvas.getBoundingClientRect();
             const mouseX = e.clientX - rect.left;
             const mouseY = e.clientY - rect.top;
             
+            // 相对于屏幕中心计算角度
             const dx = mouseX - canvas.width / 2;
             const dy = mouseY - canvas.height / 2;
             input.angle = Math.atan2(dy, dx);
             input.active = true;
+        }
+
+        // 鼠标按下：开始跟随
+        canvas.addEventListener('mousedown', (e) => {
+            if (gameState !== 'PLAYING') return;
+            // 如果点到的是加速按钮，不触发方向控制
+            if (e.target.closest('#boostBtn')) return;
+            
+            input.isMouseDown = true;
+            updateMouseDirection(e);
         });
 
-        // 触摸跟随
-        canvas.addEventListener('touchmove', (e) => {
+        // 鼠标移动：仅在按下时跟随
+        canvas.addEventListener('mousemove', (e) => {
             if (gameState !== 'PLAYING') return;
-            e.preventDefault(); 
-            
-            const touch = e.touches[0];
-            const rect = canvas.getBoundingClientRect();
-            const touchX = touch.clientX - rect.left;
-            const touchY = touch.clientY - rect.top;
+            if (input.isMouseDown) {
+                updateMouseDirection(e);
+            }
+        });
 
-            const dx = touchX - canvas.width / 2;
-            const dy = touchY - canvas.height / 2;
-            
-            input.angle = Math.atan2(dy, dx);
-            input.active = true;
-        }, {passive: false});
+        // 鼠标松开/移出：停止跟随
+        const handleMouseUp = () => {
+            input.isMouseDown = false;
+            // 松开后，input.active 保持 true，但 angle 不再更新
+            // 蛇会保持最后的方向继续移动
+        };
+
+        canvas.addEventListener('mouseup', handleMouseUp);
+        // 鼠标移出画布也视为松开，防止卡住
+        canvas.addEventListener('mouseleave', handleMouseUp);
+
+
+        // --- 移动端触摸控制逻辑 (保持不变) ---
+        // 触摸跟随：改为“隐形动态摇杆”模式
+        // 逻辑：按下位置为摇杆中心，滑动偏移量控制方向
+        let joystick = {
+            id: null,
+            startX: 0,
+            startY: 0,
+            active: false
+        };
 
         canvas.addEventListener('touchstart', (e) => {
-             if (gameState === 'PLAYING') input.active = true;
+             if (gameState !== 'PLAYING') return;
+             // 如果点击的是加速按钮，不触发移动摇杆逻辑
+             if (e.target.closest('#boostBtn')) return;
+
+             // 只处理第一个触摸作为摇杆
+             if (!joystick.active) {
+                 const touch = e.changedTouches[0];
+                 joystick.id = touch.identifier;
+                 joystick.startX = touch.clientX;
+                 joystick.startY = touch.clientY;
+                 joystick.active = true;
+                 input.active = true;
+             }
         }, {passive: false});
+
+        canvas.addEventListener('touchmove', (e) => {
+            if (gameState !== 'PLAYING' || !joystick.active) return;
+            e.preventDefault(); // 防止屏幕滚动
+
+            for(let i=0; i<e.changedTouches.length; i++) {
+                const touch = e.changedTouches[i];
+                if (touch.identifier === joystick.id) {
+                    const dx = touch.clientX - joystick.startX;
+                    const dy = touch.clientY - joystick.startY;
+                    
+                    // 只有滑动一定距离(死区)才改变方向，防止误触抖动
+                    if (dx*dx + dy*dy > 25) {
+                        input.angle = Math.atan2(dy, dx);
+                    }
+                    break;
+                }
+            }
+        }, {passive: false});
+
+        const handleTouchEnd = (e) => {
+             for(let i=0; i<e.changedTouches.length; i++) {
+                if (e.changedTouches[i].identifier === joystick.id) {
+                    joystick.active = false;
+                    joystick.id = null;
+                    break;
+                }
+            }
+        };
+        
+        canvas.addEventListener('touchend', handleTouchEnd);
+        canvas.addEventListener('touchcancel', handleTouchEnd);
 
         const handleBoostStart = (e) => {
             e.preventDefault();
