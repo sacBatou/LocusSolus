@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>蛇蛇大作战 - Slither Battle</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -12,11 +12,14 @@
             background-color: #fff; /* 白色背景 */
             touch-action: none;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            /* 禁用选中和长按菜单 */
+            -webkit-user-select: none;
+            user-select: none;
+            -webkit-touch-callout: none;
         }
         #gameCanvas {
             display: block;
-            width: 100vw;
-            height: 100vh;
+            /* 移除 CSS 中的固定宽高，完全由 JS 控制以避免形变 */
         }
         /* UI 层 */
         .ui-layer {
@@ -26,6 +29,12 @@
             width: 100%;
             height: 100%;
             pointer-events: none;
+            /* 适配刘海屏和底部小黑条 */
+            padding-top: env(safe-area-inset-top);
+            padding-bottom: env(safe-area-inset-bottom);
+            padding-left: env(safe-area-inset-left);
+            padding-right: env(safe-area-inset-right);
+            box-sizing: border-box;
         }
         .pointer-events-auto {
             pointer-events: auto;
@@ -61,12 +70,14 @@
     <div id="uiLayer" class="ui-layer hidden">
         
         <!-- 左上角信息：时间 -->
-        <div class="absolute top-4 left-4 text-gray-800 text-xl font-bold drop-shadow-sm bg-white/50 px-3 py-1 rounded-full border border-gray-300">
+        <!-- 增加 top/left 边距，避免贴边 -->
+        <div class="absolute top-6 left-6 md:top-4 md:left-4 text-gray-800 text-xl font-bold drop-shadow-sm bg-white/50 px-3 py-1 rounded-full border border-gray-300 pointer-events-none select-none">
             ⏱️ <span id="timerDisplay">05:00</span>
         </div>
 
         <!-- 右上角排行榜 -->
-        <div class="absolute top-4 right-4 w-48 bg-black/60 rounded-lg p-2 text-white pointer-events-auto backdrop-blur-sm shadow-lg">
+        <!-- 增加 top/right 边距 -->
+        <div class="absolute top-6 right-6 md:top-4 md:right-4 w-40 md:w-48 bg-black/60 rounded-lg p-2 text-white pointer-events-auto backdrop-blur-sm shadow-lg select-none">
             <h3 class="text-center text-sm font-bold text-yellow-400 mb-1 border-b border-white/20 pb-1">🏆 排行榜</h3>
             <ul id="leaderboard" class="text-xs space-y-1">
                 <!-- 动态生成 -->
@@ -80,8 +91,9 @@
         <div id="joystick-zone"></div>
 
         <!-- 加速按钮 (右下) -->
-        <div class="absolute bottom-10 right-10 pointer-events-auto">
-            <button id="boostBtn" class="relative w-20 h-20 rounded-full bg-red-500 border-4 border-red-700 shadow-xl active:scale-95 transition-transform overflow-hidden flex items-center justify-center group">
+        <!-- 增加 bottom/right 边距，防止被部分手机浏览器的底部栏遮挡 -->
+        <div class="absolute bottom-16 right-8 md:bottom-10 md:right-10 pointer-events-auto">
+            <button id="boostBtn" class="relative w-20 h-20 rounded-full bg-red-500 border-4 border-red-700 shadow-xl active:scale-95 transition-transform overflow-hidden flex items-center justify-center group touch-manipulation">
                 <span class="text-2xl text-white">⚡</span>
                 <!-- 冷却遮罩 -->
                 <div id="boostCooldown" class="absolute bottom-0 left-0 w-full h-0 bg-black/60 z-10"></div>
@@ -954,10 +966,21 @@
         });
 
         function resize() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
+            // 获取实际视口尺寸
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            
+            // 设置 canvas 内部绘图分辨率 (buffer size)
+            canvas.width = width;
+            canvas.height = height;
+            
+            // 显式设置 canvas 的 CSS 尺寸，强制与内部分辨率一致
+            // 这能防止浏览器因地址栏出现/消失而自动拉伸 canvas 导致形变
+            canvas.style.width = width + 'px';
+            canvas.style.height = height + 'px';
         }
         window.addEventListener('resize', resize);
+        // 初始化时调用一次
         resize();
 
     </script>
